@@ -11,7 +11,8 @@ In order to compile this plugin you will need the `NET SNMP Development` package
 
 Clone or download the project from GitHub
 
-    cmake .
+    mkdir build && cd build
+    cmake ..
 
 Running "make" should successfully compile the plugin, and "make install" will install them under
 the configured path.
