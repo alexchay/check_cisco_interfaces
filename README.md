@@ -54,6 +54,7 @@ the configured path.
      -u|--user          SNMPv3 User
      -d|--down-is-ok    disables critical alerts for down interfaces
                             i.e do not consider a down interface to be critical
+     -D|--regex_down    interface list regexp for down interfaces to be critical
      -a|--aliases       retrieves the interface description
      -A|--match-aliases also test the Alias against the Regexes
      -N|--if-names      use ifName instead of ifDescr

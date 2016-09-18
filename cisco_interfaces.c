@@ -44,11 +44,11 @@ main(int argc, char *argv[])
     unsigned int    trimalias = 0;
     int     bw = 0;
     u64     speed = 0;
-    char    *hostname=0, *community=0, *list=0, *exclude_list=0, *oldperfdatap=0, *ifname=0;
+    char    *hostname=0, *community=0, *list=0, *exclude_list=0, *list_down=0, *oldperfdatap=0, *ifname=0;
     char    *user=0, *auth_proto=0, *auth_pass=0, *priv_proto=0, *priv_pass=0;
 
 
-    int     status, index, countif, lastif, ifNumber;
+    int     status, index, countif, lastif, ifNumber, regex_down_flag;
     int     i, j, k;
     int     errorflag = 0;
     int     warnflag = 0;
@@ -91,6 +91,7 @@ main(int argc, char *argv[])
         {"bandwidth",     required_argument,  NULL,   'b'},
         {"community",     required_argument,  NULL,   'c'},
         {"down-is-ok",    no_argument,        NULL,   'd'},
+        {"regex-down",    required_argument,  NULL,   'D'},
         {"errors",        required_argument,  NULL,   'e'},
         {"out-errors",    required_argument,  NULL,   'f'},
         {"hostname",      required_argument,  NULL,   'h'},
@@ -112,7 +113,7 @@ main(int argc, char *argv[])
         {NULL,            0,                  NULL,     0}
     };
 
-    while ((opt = getopt_long(argc, argv, "aAb:c:de:f:h:j:J:k:K:Np:r:R:s:t:u:x:?", longopts, NULL)) != -1)
+    while ((opt = getopt_long(argc, argv, "aAb:c:dD:e:f:h:j:J:k:K:Np:r:R:s:t:u:x:?", longopts, NULL)) != -1)
     {
         switch(opt)
         {
@@ -131,6 +132,8 @@ main(int argc, char *argv[])
             case 'd':
                 crit_on_down_flag = 0;
                 break;
+            case 'D':
+                list_down = optarg;
             case 'e':
                 in_err_tolerance = strtol(optarg, NULL, 10);
                 break;
@@ -637,6 +640,16 @@ main(int argc, char *argv[])
     if (oldperfdatap && deltachecks && oldperfdatap[0])
         parse_perfdata(oldperfdatap, oldperfdata, ifNumber);
 
+    /* parse the interfaces regex */
+    regex_t regex_down;
+    if (list_down) {
+        status = regcomp(&regex_down, list_down, REG_ICASE|REG_EXTENDED|REG_NOSUB);
+        if (status != 0) {
+            printf("Error creating regex for down interfaces\n");
+            exit (3);
+        }
+    }
+
     countif =0;
     for (i=0; i<ifNumber; i++)  {
         if (interfaces[i].descr && !interfaces[i].ignore) {
@@ -644,15 +657,22 @@ main(int argc, char *argv[])
             ifname = get_names_flag ? interfaces[i].name : interfaces[i].descr;
             /* interface is DOWN */
             if (!interfaces[i].status) {
-                // TODO crit_on_down_flag is regex
                 if (crit_on_down_flag) {
+                    regex_down_flag =0;
+                    if (list_down) {
+                        if ((!get_names_flag && !match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].descr)) || (get_names_flag && !match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].name)) || (get_names_flag && match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].alias)))
+                           regex_down_flag =1;
+                    }
 
-                    addstr(&out, "%s", ifname);
-                    if (get_aliases_flag)
-                        addstr(&out, " (%s)", interfaces[i].alias);
-                    addstr(&out, " is %s, ", interfaces[i].admin_down ? "admin down" : "down");
 
-                    errorflag++;
+                    if (!list_down || regex_down_flag) {
+                        addstr(&out, "%s", ifname);
+                        if (get_aliases_flag)
+                            addstr(&out, " (%s)", interfaces[i].alias);
+                        addstr(&out, " is %s, ", interfaces[i].admin_down ? "admin down" : "down");
+
+                        errorflag++;
+                    }
                 }
                 interfaces[i].ignore =1;
                 continue;
@@ -694,6 +714,9 @@ main(int argc, char *argv[])
             countif++;
         }
     }
+    if (list_down)
+        regfree(&regex_down);
+
 
     addstr (&out, " got %d interfaces", countif);
 
@@ -856,6 +879,7 @@ int usage(char *progname)
     printf(" -K|--priv-phrase\tSNMPv3 Privacy Phrase\n");
     printf(" -u|--user\t\tSNMPv3 User\n");
     printf(" -d|--down-is-ok\tdisables critical alerts for down interfaces\n");
+    printf(" -D|--regex for down interfaces\t interface list regexp for down interfaces\n");
     printf(" -a|--aliases\t\tretrieves the interface description\n");
     printf(" -x|--trim\t\tcut this number of characters from the start of interface aliases\n");
     printf(" -A|--match-aliases\talso match against aliases\n");
