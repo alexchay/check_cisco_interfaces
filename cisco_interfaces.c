@@ -41,7 +41,7 @@ main(int argc, char *argv[])
     int     get_names_flag = 0;
     int     in_err_tolerance = 50;
     int     out_err_tolerance = -1;
-    unsigned int    trimalias = 0;
+    unsigned int len, trimalias = 0;
     int     bw = 0;
     u64     speed = 0;
     char    *hostname=0, *community=0, *list=0, *exclude_list=0, *list_down=0, *oldperfdatap=0, *ifname=0;
@@ -365,14 +365,14 @@ main(int argc, char *argv[])
                         if (vars->type == ASN_OCTET_STR) {
                             interfaces[countif].index = (int) vars->name[(vars->name_length - 1)];
                             MEMCPY(interfaces[countif].descr, vars->val.string, vars->val_len);
-                            if (list && !get_names_flag && !match_aliases_flag && !match_regexs(&regex, (exclude_list ? &exclude_regex :0), interfaces[countif].descr))
+                            if (list && !match_aliases_flag && !get_names_flag && !match_regexs(&regex, (exclude_list ? &exclude_regex :0), interfaces[countif].descr))
                                 interfaces[countif].ignore =1;
                         }
                         break;
                     case 3: /* ifName */
                         if (vars->type == ASN_OCTET_STR)
                             MEMCPY(interfaces[countif].name, vars->val.string, vars->val_len);
-                            if (list && get_names_flag && !match_aliases_flag && !match_regexs(&regex, (exclude_list ? &exclude_regex :0), interfaces[countif].name))
+                            if (list && !match_aliases_flag && get_names_flag && !match_regexs(&regex, (exclude_list ? &exclude_regex :0), interfaces[countif].name))
                                 interfaces[countif].ignore =1;
                         break;
                     case 4: /* ifAlias */
@@ -380,10 +380,6 @@ main(int argc, char *argv[])
                             MEMCPY(interfaces[countif].alias, vars->val.string, vars->val_len);
                             if (list && match_aliases_flag && !match_regexs(&regex, (exclude_list ? &exclude_regex :0), interfaces[countif].alias))
                                 interfaces[countif].ignore =1;
-                            if (trimalias && trimalias < vars->val_len) {
-                                MEMCPY(interfaces[countif].alias, (vars->val.string)+trimalias, vars->val_len - trimalias);
-                                TERMSTR(interfaces[countif].alias, vars->val_len - trimalias);
-                            }
                         break;
                     case 5: /* ifType */
                         if (vars->type == ASN_INTEGER)
@@ -394,7 +390,7 @@ main(int argc, char *argv[])
 
                 /* save the OID in case we need additional packets */
                 index &=OID_REPEATERS-1;
-                memcpy(lastOID[index].name, vars->name, (vars->name_length  * sizeof(oid)));
+                MEMCPY(lastOID[index].name, vars->name, (vars->name_length  * sizeof(oid)));
                 lastOID[index++].name_len = vars->name_length;
             }
 
@@ -660,7 +656,7 @@ main(int argc, char *argv[])
                 if (crit_on_down_flag) {
                     regex_down_flag =0;
                     if (list_down) {
-                        if ((!get_names_flag && !match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].descr)) || (get_names_flag && !match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].name)) || (get_names_flag && match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].alias)))
+                        if ((match_aliases_flag && match_regexs(&regex_down, 0, interfaces[i].alias)) || (!match_aliases_flag && !get_names_flag && match_regexs(&regex_down, 0, interfaces[i].descr)) || (!match_aliases_flag && get_names_flag && match_regexs(&regex_down, 0, interfaces[i].name)))
                            regex_down_flag =1;
                     }
 
@@ -675,41 +671,47 @@ main(int argc, char *argv[])
                     }
                 }
                 interfaces[i].ignore =1;
-                continue;
             }
-            /* check if errors on the interface are increasing faster than our defined value */
-            if (oldperfdatap && oldperfdata[i].inErrors && oldperfdata[i].outErrors &&
-                (interfaces[i].inErrors > (oldperfdata[i].inErrors + (unsigned long) in_err_tolerance)
-                || interfaces[i].outErrors > (oldperfdata[i].outErrors + (unsigned long) out_err_tolerance))) {
+            else {
+                /* check if errors on the interface are increasing faster than our defined value */
+                if (oldperfdatap && oldperfdata[i].inErrors && oldperfdata[i].outErrors &&
+                    (interfaces[i].inErrors > (oldperfdata[i].inErrors + (unsigned long) in_err_tolerance)
+                    || interfaces[i].outErrors > (oldperfdata[i].outErrors + (unsigned long) out_err_tolerance))) {
 
-                addstr(&out, "%s", ifname);
-                if (get_aliases_flag)
-                    addstr(&out, " (%s)", interfaces[i].alias);
-                addstr(&out, " has ");
-                if (interfaces[i].inErrors  > (oldperfdata[i].inErrors + (unsigned long) in_err_tolerance))
-                    addstr(&out, "+%lu in ", interfaces[i].inErrors - oldperfdata[i].inErrors);
-                if (interfaces[i].outErrors > (oldperfdata[i].outErrors + (unsigned long) out_err_tolerance))
-                    addstr(&out, "+%lu out ", interfaces[i].outErrors - oldperfdata[i].outErrors);
-                addstr(&out, "errors, ");
+                    addstr(&out, "%s", ifname);
+                    if (get_aliases_flag)
+                        addstr(&out, " (%s)", interfaces[i].alias);
+                    addstr(&out, " has ");
+                    if (interfaces[i].inErrors  > (oldperfdata[i].inErrors + (unsigned long) in_err_tolerance))
+                        addstr(&out, "+%lu in ", interfaces[i].inErrors - oldperfdata[i].inErrors);
+                    if (interfaces[i].outErrors > (oldperfdata[i].outErrors + (unsigned long) out_err_tolerance))
+                        addstr(&out, "+%lu out ", interfaces[i].outErrors - oldperfdata[i].outErrors);
+                    addstr(&out, "errors, ");
 
-                warnflag++;
-            }
-            if (deltachecks && oldperfdatap){
-                ifdeltachecks = interfaces[i].checktime - oldperfdata[i].checktime;
-                interfaces[i].inBitps = (subtract64(interfaces[i].inOctets, oldperfdata[i].inOctets) / (u64)ifdeltachecks) * 8ULL;
-                interfaces[i].outBitps = (subtract64(interfaces[i].outOctets, oldperfdata[i].outOctets) / (u64)ifdeltachecks) * 8ULL;
-                if (bw >0) {
-                    if (speed) {
-                        inload = (long double)interfaces[i].inBitps / ((long double)speed/100L);
-                        outload = (long double)interfaces[i].outBitps / ((long double)speed/100L);
-                    } else {
-                        /* use the interface speed if a speed is not given */
-                        inload = (long double)interfaces[i].inBitps / ((long double)interfaces[i].speed/100L);
-                        outload = (long double)interfaces[i].outBitps / ((long double)interfaces[i].speed/100L);
-                    }
-                    if ((int)inload > bw || (int)outload > bw)
-                        warnflag++;
+                    warnflag++;
                 }
+                if (deltachecks && oldperfdatap){
+                    ifdeltachecks = interfaces[i].checktime - oldperfdata[i].checktime;
+                    interfaces[i].inBitps = (subtract64(interfaces[i].inOctets, oldperfdata[i].inOctets) / (u64)ifdeltachecks) * 8ULL;
+                    interfaces[i].outBitps = (subtract64(interfaces[i].outOctets, oldperfdata[i].outOctets) / (u64)ifdeltachecks) * 8ULL;
+                    if (bw >0) {
+                        if (speed) {
+                            inload = (long double)interfaces[i].inBitps / ((long double)speed/100L);
+                            outload = (long double)interfaces[i].outBitps / ((long double)speed/100L);
+                        } else {
+                            /* use the interface speed if a speed is not given */
+                            inload = (long double)interfaces[i].inBitps / ((long double)interfaces[i].speed/100L);
+                            outload = (long double)interfaces[i].outBitps / ((long double)interfaces[i].speed/100L);
+                        }
+                        if ((int)inload > bw || (int)outload > bw)
+                            warnflag++;
+                    }
+                }
+            }
+            if (trimalias) {
+                len =  strlen(interfaces[i].alias);
+                if (trimalias < len)
+                    strcpy(interfaces[i].alias, interfaces[i].alias+trimalias);
             }
             countif++;
         }
